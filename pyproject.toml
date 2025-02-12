@@ -12,7 +12,7 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "langgraph>=0.2.70",
+    "langchain-core>=0.3.35",
     "mcp>=1.2.1",
 ]
 
