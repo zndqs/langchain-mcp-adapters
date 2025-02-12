@@ -13,7 +13,7 @@ class MultiServerMCPClient:
     def __init__(self):
         self.exit_stack = AsyncExitStack()
         self.sessions: dict[str, ClientSession] = {}
-        self.tools: dict[str, list[StructuredTool]] = {}
+        self.server_name_to_tools: dict[str, list[StructuredTool]] = {}
 
     async def connect_to_server(
         self, server_name: str, *, command: str, args: list[str], env: dict = None
@@ -37,12 +37,12 @@ class MultiServerMCPClient:
 
         # Load tools from this server
         server_tools = await load_mcp_tools(session)
-        self.tools[server_name] = server_tools
+        self.server_name_to_tools[server_name] = server_tools
 
     def get_tools(self) -> list[StructuredTool]:
         """Get a list of all tools from all connected servers."""
         all_tools: list[StructuredTool] = []
-        for server_tools in self.tools.values():
+        for server_tools in self.server_name_to_tools.values():
             all_tools.extend(server_tools)
         return all_tools
 
