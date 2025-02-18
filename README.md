@@ -17,6 +17,12 @@ pip install langchain-mcp-adapters
 
 Here is a simple example of using the MCP tools with a LangGraph agent.
 
+```bash
+pip install langchain-mcp-adapters langgraph langchain-openai
+
+export OPENAI_API_KEY=<your_api_key>
+```
+
 ### Server
 
 First, let's create an MCP server that can add and multiply numbers.
@@ -56,7 +62,8 @@ model = ChatOpenAI(model="gpt-4o")
 
 server_params = StdioServerParameters(
     command="python",
-    args=["path/to/math_server.py"],
+    # Make sure to update to the full absolute path to your math_server.py file
+    args=["/path/to/math_server.py"],
 )
 
 async with stdio_client(server_params) as (read, write):
@@ -110,12 +117,14 @@ async with MultiServerMCPClient() as client:
     await client.connect_to_server(
         "math",
         command="python",
-        args=["path/to/math_server.py"],
+        # Make sure to update to the full absolute path to your math_server.py file
+        args=["/path/to/math_server.py"],
     )
     await client.connect_to_server(
         "weather",
         command="python",
-        args=["path/to/weather_server.py"],
+        # Make sure to update to the full absolute path to your weather_server.py file
+        args=["/path/to/weather_server.py"],
     )
     agent = create_react_agent(model, client.get_tools())
     math_response = await agent.ainvoke({"messages": "what's (3 + 5) x 12?"})
