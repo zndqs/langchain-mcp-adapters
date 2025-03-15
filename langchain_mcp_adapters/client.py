@@ -14,6 +14,9 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 DEFAULT_ENCODING = "utf-8"
 DEFAULT_ENCODING_ERROR_HANDLER = "strict"
 
+DEFAULT_HTTP_TIMEOUT = 5
+DEFAULT_SSE_READ_TIMEOUT = 60 * 5
+
 
 class StdioConnection(TypedDict):
     transport: Literal["stdio"]
@@ -44,6 +47,15 @@ class SSEConnection(TypedDict):
 
     url: str
     """The URL of the SSE endpoint to connect to."""
+
+    headers: dict[str, Any] | None = None
+    """HTTP headers to send to the SSE endpoint"""
+
+    timeout: float
+    """HTTP timeout"""
+
+    sse_read_timeout: float
+    """SSE read timeout"""
 
 
 class MultiServerMCPClient:
@@ -125,7 +137,13 @@ class MultiServerMCPClient:
         if transport == "sse":
             if "url" not in kwargs:
                 raise ValueError("'url' parameter is required for SSE connection")
-            await self.connect_to_server_via_sse(server_name, url=kwargs["url"])
+            await self.connect_to_server_via_sse(
+                server_name,
+                url=kwargs["url"],
+                headers=kwargs.get("headers"),
+                timeout=kwargs.get("timeout", DEFAULT_HTTP_TIMEOUT),
+                sse_read_timeout=kwargs.get("sse_read_timeout", DEFAULT_SSE_READ_TIMEOUT),
+            )
         elif transport == "stdio":
             if "command" not in kwargs:
                 raise ValueError("'command' parameter is required for stdio connection")
@@ -189,15 +207,23 @@ class MultiServerMCPClient:
         server_name: str,
         *,
         url: str,
+        headers: dict[str, Any] | None = None,
+        timeout: float = DEFAULT_HTTP_TIMEOUT,
+        sse_read_timeout: float = DEFAULT_SSE_READ_TIMEOUT,
     ) -> None:
         """Connect to a specific MCP server using SSE
 
         Args:
             server_name: Name to identify this server connection
             url: URL of the SSE server
+            headers: HTTP headers to send to the SSE endpoint
+            timeout: HTTP timeout
+            sse_read_timeout: SSE read timeout
         """
         # Create and store the connection
-        sse_transport = await self.exit_stack.enter_async_context(sse_client(url))
+        sse_transport = await self.exit_stack.enter_async_context(
+            sse_client(url, headers, timeout, sse_read_timeout)
+        )
         read, write = sse_transport
         session = cast(
             ClientSession,
