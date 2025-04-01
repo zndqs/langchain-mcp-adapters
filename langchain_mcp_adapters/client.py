@@ -49,7 +49,7 @@ class SSEConnection(TypedDict):
     url: str
     """The URL of the SSE endpoint to connect to."""
 
-    headers: dict[str, Any] | None = None
+    headers: dict[str, Any] | None
     """HTTP headers to send to the SSE endpoint"""
 
     timeout: float
@@ -62,7 +62,9 @@ class SSEConnection(TypedDict):
 class MultiServerMCPClient:
     """Client for connecting to multiple MCP servers and loading LangChain-compatible tools from them."""
 
-    def __init__(self, connections: dict[str, StdioConnection | SSEConnection] = None) -> None:
+    def __init__(
+        self, connections: dict[str, StdioConnection | SSEConnection] | None = None
+    ) -> None:
         """Initialize a MultiServerMCPClient with MCP servers connections.
 
         Args:
@@ -92,7 +94,7 @@ class MultiServerMCPClient:
                 ...
             ```
         """
-        self.connections = connections
+        self.connections: dict[str, StdioConnection | SSEConnection] = connections or {}
         self.exit_stack = AsyncExitStack()
         self.sessions: dict[str, ClientSession] = {}
         self.server_name_to_tools: dict[str, list[BaseTool]] = {}
@@ -261,9 +263,11 @@ class MultiServerMCPClient:
                 connection_dict = connection.copy()
                 transport = connection_dict.pop("transport")
                 if transport == "stdio":
-                    await self.connect_to_server_via_stdio(server_name, **connection_dict)
+                    # connection_dict is a StdioConnection (with "transport" popped)
+                    await self.connect_to_server_via_stdio(server_name, **connection_dict)  # type: ignore
                 elif transport == "sse":
-                    await self.connect_to_server_via_sse(server_name, **connection_dict)
+                    # connection_dict is a SSEConnection (with "transport" popped)
+                    await self.connect_to_server_via_sse(server_name, **connection_dict)  # type: ignore
                 else:
                     raise ValueError(
                         f"Unsupported transport: {transport}. Must be 'stdio' or 'sse'"
