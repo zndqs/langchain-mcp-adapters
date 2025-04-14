@@ -73,11 +73,22 @@ class SSEConnection(TypedDict):
     """Additional keyword arguments to pass to the ClientSession"""
 
 
+class WebsocketConnection(TypedDict):
+    transport: Literal["websocket"]
+
+    url: str
+    """The URL of the Websocket endpoint to connect to."""
+
+    session_kwargs: dict[str, Any] | None
+    """Additional keyword arguments to pass to the ClientSession"""
+
+
 class MultiServerMCPClient:
     """Client for connecting to multiple MCP servers and loading LangChain-compatible tools from them."""
 
     def __init__(
-        self, connections: dict[str, StdioConnection | SSEConnection] | None = None
+        self,
+        connections: dict[str, StdioConnection | SSEConnection | WebsocketConnection] | None = None,
     ) -> None:
         """Initialize a MultiServerMCPClient with MCP servers connections.
 
@@ -108,7 +119,9 @@ class MultiServerMCPClient:
                 ...
             ```
         """
-        self.connections: dict[str, StdioConnection | SSEConnection] = connections or {}
+        self.connections: dict[str, StdioConnection | SSEConnection | WebsocketConnection] = (
+            connections or {}
+        )
         self.exit_stack = AsyncExitStack()
         self.sessions: dict[str, ClientSession] = {}
         self.server_name_to_tools: dict[str, list[BaseTool]] = {}
@@ -134,7 +147,7 @@ class MultiServerMCPClient:
         self,
         server_name: str,
         *,
-        transport: Literal["stdio", "sse"] = "stdio",
+        transport: Literal["stdio", "sse", "websocket"] = "stdio",
         **kwargs,
     ) -> None:
         """Connect to an MCP server using either stdio or SSE.
@@ -176,6 +189,14 @@ class MultiServerMCPClient:
                 encoding_error_handler=kwargs.get(
                     "encoding_error_handler", DEFAULT_ENCODING_ERROR_HANDLER
                 ),
+                session_kwargs=kwargs.get("session_kwargs"),
+            )
+        elif transport == "websocket":
+            if "url" not in kwargs:
+                raise ValueError("'url' parameter is required for Websocket connection")
+            await self.connect_to_server_via_websocket(
+                server_name,
+                url=kwargs["url"],
                 session_kwargs=kwargs.get("session_kwargs"),
             )
         else:
@@ -256,6 +277,42 @@ class MultiServerMCPClient:
             sse_client(url, headers, timeout, sse_read_timeout)
         )
         read, write = sse_transport
+        session_kwargs = session_kwargs or {}
+        session = cast(
+            ClientSession,
+            await self.exit_stack.enter_async_context(ClientSession(read, write, **session_kwargs)),
+        )
+
+        await self._initialize_session_and_load_tools(server_name, session)
+
+    async def connect_to_server_via_websocket(
+        self,
+        server_name: str,
+        *,
+        url: str,
+        session_kwargs: dict[str, Any] | None = None,
+    ):
+        """Connect to a specific MCP server using Websockets
+
+        Args:
+            server_name: Name to identify this server connection
+            url: URL of the Websocket endpoint
+            session_kwargs: Additional keyword arguments to pass to the ClientSession
+
+        Raises:
+            ImportError: If websockets package is not installed
+        """
+        try:
+            from mcp.client.websocket import websocket_client
+        except ImportError:
+            raise ImportError(
+                "Could not import websocket_client. ",
+                "To use Websocket connections, please install the required dependency with: ",
+                "'pip install mcp[ws]' or 'pip install websockets'",
+            ) from None
+
+        ws_transport = await self.exit_stack.enter_async_context(websocket_client(url))
+        read, write = ws_transport
         session_kwargs = session_kwargs or {}
         session = cast(
             ClientSession,
