@@ -53,7 +53,8 @@ def convert_mcp_tool_to_langchain_tool(
     Args:
         session: MCP client session
         tool: MCP tool to convert
-        connection: Optional connection config to use to create a new session if a `session` is not provided
+        connection: Optional connection config to use to create a new session
+                    if a `session` is not provided
 
     Returns:
         a LangChain tool
@@ -81,6 +82,7 @@ def convert_mcp_tool_to_langchain_tool(
         args_schema=tool.inputSchema,
         coroutine=call_tool,
         response_format="content_and_artifact",
+        metadata=tool.annotations.model_dump() if tool.annotations else None,
     )
 
 
@@ -91,12 +93,9 @@ async def load_mcp_tools(
 ) -> list[BaseTool]:
     """Load all available MCP tools and convert them to LangChain tools.
 
-    Args:
-        session: MCP client session
-        connection: Optional connection config to use to create a new session if a `session` is not provided
-
     Returns:
-        a list of LangChain tools
+        list of LangChain tools. Tool annotations are returned as part
+        of the tool metadata object.
     """
     if session is None and connection is None:
         raise ValueError("Either a session or a connection config must be provided")
@@ -109,7 +108,8 @@ async def load_mcp_tools(
     else:
         tools = await session.list_tools()
 
-    return [
+    converted_tools = [
         convert_mcp_tool_to_langchain_tool(session, tool, connection=connection)
         for tool in tools.tools
     ]
+    return converted_tools
