@@ -1,8 +1,10 @@
+from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.messages import ToolMessage
-from langchain_core.tools import BaseTool, ToolException
+from langchain_core.tools import ArgsSchema, BaseTool, InjectedToolArg, ToolException, tool
 from mcp.types import (
     CallToolResult,
     EmbeddedResource,
@@ -11,10 +13,12 @@ from mcp.types import (
     TextResourceContents,
 )
 from mcp.types import Tool as MCPTool
+from pydantic import BaseModel
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import (
     _convert_call_tool_result,
+    convert_langchain_tool_to_fastmcp_tool,
     convert_mcp_tool_to_langchain_tool,
     load_mcp_tools,
 )
@@ -250,3 +254,85 @@ async def test_load_mcp_tools_with_annotations(
             "destructiveHint": None,
             "openWorldHint": None,
         }
+
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two numbers"""
+    return a + b
+
+
+class AddInput(BaseModel):
+    """Add two numbers"""
+
+    a: int
+    b: int
+
+
+@tool("add", args_schema=AddInput)
+def add_with_schema(a: int, b: int) -> int:
+    return a + b
+
+
+@tool("add")
+def add_with_injection(a: int, b: int, injected_arg: Annotated[str, InjectedToolArg()]) -> int:
+    """Add two numbers"""
+    return a + b
+
+
+class AddTool(BaseTool):
+    name: str = "add"
+    description: str = "Add two numbers"
+    args_schema: ArgsSchema | None = AddInput
+
+    def _run(self, a: int, b: int, run_manager: CallbackManagerForToolRun | None = None) -> int:
+        """Use the tool."""
+        return a + b
+
+    async def _arun(
+        self, a: int, b: int, run_manager: CallbackManagerForToolRun | None = None
+    ) -> int:
+        """Use the tool."""
+        return self._run(a, b, run_manager=run_manager)
+
+
+@pytest.mark.parametrize(
+    "tool_instance",
+    [
+        add,
+        add_with_schema,
+        AddTool(),
+    ],
+    ids=["tool", "tool_with_schema", "tool_class"],
+)
+async def test_convert_langchain_tool_to_fastmcp_tool(tool_instance):
+    fastmcp_tool = convert_langchain_tool_to_fastmcp_tool(tool_instance)
+    assert fastmcp_tool.name == "add"
+    assert fastmcp_tool.description == "Add two numbers"
+    assert fastmcp_tool.parameters == {
+        "description": "Add two numbers",
+        "properties": {
+            "a": {"title": "A", "type": "integer"},
+            "b": {"title": "B", "type": "integer"},
+        },
+        "required": ["a", "b"],
+        "title": "add",
+        "type": "object",
+    }
+    assert fastmcp_tool.fn_metadata.arg_model.model_json_schema() == {
+        "properties": {
+            "a": {"title": "A", "type": "integer"},
+            "b": {"title": "B", "type": "integer"},
+        },
+        "required": ["a", "b"],
+        "title": "addArguments",
+        "type": "object",
+    }
+
+    arguments = {"a": 1, "b": 2}
+    assert await fastmcp_tool.run(arguments=arguments) == 3
+
+
+def test_convert_langchain_tool_to_fastmcp_tool_with_injection():
+    with pytest.raises(NotImplementedError):
+        convert_langchain_tool_to_fastmcp_tool(add_with_injection)
